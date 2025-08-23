@@ -8,13 +8,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-
-
 async def main():
 
+    user_input= input("Enter your quiery")
     user_context = UserContext(name="abdullah", city="Karachi", topic="AI engenier" )
     
-    result: Runner = Runner.run_streamed(requirement_gathering_agent, input="tell me about future trend of Ai agents", context=user_context)
+    result: Runner = Runner.run_streamed(requirement_gathering_agent, user_input, context=user_context)
     async for event in result.stream_events():
         if event.type == "raw_response_event" and isinstance(event.data, ResponseTextDeltaEvent):
             print(event.data.delta, end="", flush=True)
