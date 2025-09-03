@@ -1,71 +1,155 @@
 from agents import Agent, ModelSettings
+from agents.model_settings import ToolChoice
 from my_tools.my_tools import web_search_tool, extract_content, user_info, dynamic_instructions
 from my_config.gemini_config import llm_model
 
 
-
+# -----------------------------
+# Web Search Agent
+# -----------------------------
 web_search_agent = Agent(
-    name="web search agent",
+    name="Web Search Agent",
     tools=[web_search_tool, extract_content, user_info],
-    instructions="You are web search agent. You have to search user quiery on website to find latest information.Create a Synthesis Agent that takes all research findings and organizes them into clear sections with themes, trends, and key insights rather than just listing facts.",
-    model=llm_model)
+    instructions="""
+You are a deep web search agent.
+Your role is to perform accurate and comprehensive searches across the web.
+
+Guidelines:
+1. Take the user’s query and run a web search.
+2. Parameters:
+   - search_depth: "basic" (quick) or "advanced" (multi-source).
+   - max_results: default 5, maximum 10.
+3. Return results in a clear, structured list:
+   - Title
+   - Source (URL)
+   - Short, precise summary
+4. If results are limited, note this transparently.
+5. Never invent or hallucinate sources.
+6. Use all given tools and hand off if required.
+""",
+    model=llm_model,
+)
 
 
+# -----------------------------
+# Reflection Agent
+# -----------------------------
 reflection_agent = Agent(
-    name="Reflection agent",
-    instructions="You are reflection agent.",
-    model=llm_model)
+    name="Reflection Agent",
+    instructions="""
+You are a reflection agent.
+Your role is to analyze, critique, and refine outputs from other agents.
+
+Guidelines:
+1. Review responses for accuracy, clarity, completeness, and relevance.
+2. Identify weaknesses (missing details, vague explanations, hallucinations, formatting issues).
+3. Suggest improvements while preserving meaning.
+4. If the response is already strong, confirm it and provide brief validation.
+""",
+    model=llm_model,
+)
 
 
+# -----------------------------
+# Citations Agent
+# -----------------------------
 citations_agent = Agent(
-    name="citations agent",
-    instructions="You are citation agent. You have to add all refrence of your research.Add automatic citation tracking: every claim gets a numbered reference [1], [2], [3] with full source details at the end of the report.",
-    model=llm_model)
+    name="Citations Agent",
+    instructions="""
+You are a citations agent.
+Your role is to verify sources and add proper citations to responses.
 
-
-web_search = web_search_agent.as_tool(
-    tool_name="web_search_agent",
-    tool_description="You are web search agent. You have to search user quiery on website to find latest information.."
+Guidelines:
+1. Review content and identify claims, facts, or data that need sources.
+2. Attach citations from provided URLs or references.
+3. If no valid source is available, mark it as [source not found].
+4. Use a consistent citation style (numbered [1], [2], [3]).
+5. Place citations directly after relevant statements.
+6. Provide a References list at the end of the response.
+""",
+    model=llm_model,
 )
 
 
-reflection = reflection_agent.as_tool(
-    tool_name="reflection_agent",
-    tool_description="You are reflection agent.Add a Source Checker agent that rates sources as High (.edu, .gov, major news), Medium (Wikipedia, industry sites), or Low (blogs, forums) and warns users about questionable information."
+# -----------------------------
+# Orchestrator Agent
+# -----------------------------
+orchestrator_agent = Agent(
+    name="Orchestrator Agent",
+    instructions=dynamic_instructions,
+    tools=[
+        web_search_agent.as_tool(
+            tool_name="web_search_agent",
+            tool_description="Performs deep and accurate web searches."
+        ),
+        citations_agent.as_tool(
+            tool_name="citations_agent",
+            tool_description="Adds citations and reference tracking to responses."
+        ),
+        reflection_agent.as_tool(
+            tool_name="reflection_agent",
+            tool_description="Reviews and refines outputs for clarity and accuracy."
+        ),
+    ],
+    model_settings=ModelSettings(
+        temperature=0.9,
+        tool_choice="required"
+    ),
+    model=llm_model,
 )
 
 
-citations = citations_agent.as_tool(
-    tool_name="citations_agent",
-    tool_description="You are citation agent. You have to add all refrence of your research.Add automatic citation tracking: every claim gets a numbered reference [1], [2], [3] with full source details at the end of the report."
+# -----------------------------
+# Planner Agent
+# -----------------------------
+planner_agent = Agent(
+    name="Planner Agent",
+    instructions="""
+You are a planner agent.
+Your role is to:
+1. Break down complex research questions into smaller, manageable parts.
+2. Pass the structured tasks to the orchestrator agent.
+""",
+    handoffs=[orchestrator_agent],
+    handoff_description="Break down complex research questions into smaller manageable parts.",
+    model=llm_model,
 )
 
 
-orchestrator_agent: Agent = Agent(name="orchestrator_agent",
-                     instructions="use given all tools web_search, citations and reflection to give deep research and give summary of answer you got.Don't ask user for further details.Use citation from citations. ",
-                     tools=[web_search, citations, reflection],
-                     model_settings=ModelSettings(temperature=0.9),
-                     model=llm_model,
-                     
-) 
-
-planner_agent: Agent = Agent(name="planner_agent",
-                 instructions=" you are requested to break down Complex research questions to smaller, manageable parts, than you need to pass information to orchestrator agent.",
-                 handoffs = [orchestrator_agent],
-                 handoff_description = "You are planner agent you should break down complex research questions to smaller manageable parts.",
-                 model=llm_model)                     
-
-Conflict_Detection_agent: Agent = Agent(name="Conflict_Detection_agent",
-                 instructions="When your agents find conflicting information, highlight it clearly: Source A says X, but Source B says Y and let users know there's disagreement.",
-                 handoffs = [orchestrator_agent],
-                 handoff_description = "When your agents find conflicting information, highlight it clearly: Source A says X, but Source B says Y and let users know there's disagreement.",
-                 model=llm_model)                     
-
-
-requirement_gathering_agent: Agent = Agent(name="requirement_gathering_agent",
-                 instructions=" you are requested to gather all requirements for fulfilment of user quiery.",
-                 handoff_description= "You are requested to gather all requirements for fulfilment of user quiery",
-                 handoffs=[planner_agent,Conflict_Detection_agent],
-                 model=llm_model)                     
+# -----------------------------
+# Conflict Detection Agent
+# -----------------------------
+conflict_detection_agent = Agent(
+    name="Conflict Detection Agent",
+    instructions="""
+You are a conflict detection agent.
+Your role is to:
+1. Detect conflicting information in responses.
+2. Clearly highlight differences, e.g.:
+   - Source A says X
+   - Source B says Y
+3. Warn the user when there is disagreement between sources.
+""",
+    handoffs=[orchestrator_agent],
+    handoff_description="Highlight conflicting information across sources.",
+    model=llm_model,
+)
 
 
+# -----------------------------
+# Requirement Gathering Agent
+# -----------------------------
+requirement_gathering_agent = Agent(
+    name="Requirement Gathering Agent",
+    instructions="""
+You are a requirement gathering agent.
+Your role is to:
+1. Understand the user’s main query and context.
+2. Ask clarifying questions if needed.
+3. Gather all requirements before proceeding.
+4. Pass the finalized requirements to the planner_agent or conflict_detection_agent.
+""",
+    handoff_description="Gather requirements for fulfilling the user query.",
+    handoffs=[planner_agent, conflict_detection_agent],
+    model=llm_model,
+)
